@@ -28,10 +28,6 @@ A functional Unix shell built for 42 School that mimics bash behavior. The proje
 - **Environment variables** (`$VAR`) and exit status (`$?`)
 - **Signal handling** (Ctrl-C, Ctrl-D, Ctrl-\\)
 
-### Bonus Features 🎁
-- Logical operators (`&&`, `||`) with parentheses
-- Wildcards (`*`) for current directory
-
 ## 🚀 Installation
 
 **Prerequisites:** GCC, Make, readline library
