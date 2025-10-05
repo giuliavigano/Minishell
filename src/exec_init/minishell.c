@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   minishell.c                                        :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: gvigano <gvigano@student.42.fr>            +#+  +:+       +#+        */
+/*   By: giuliaviga <giuliaviga@student.42.fr>      +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/10/21 13:40:43 by mchiaram          #+#    #+#             */
-/*   Updated: 2025/02/06 11:46:49 by gvigano          ###   ########.fr       */
+/*   Updated: 2025/10/05 16:03:35 by giuliaviga       ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,6 +18,7 @@ static t_token	*init_token(t_token *tok, t_environ *env)
 	tok->value = NULL;
 	tok->env = env;
 	tok->rd = NULL;
+	tok->nredir = 0;
 	tok->next = NULL;
 	return (tok);
 }
@@ -53,6 +54,7 @@ static int	main_loop(t_parse *data, t_token *tok, char **envp)
 			free_all(NULL, tok, env, &input);
 			return (1);
 		}
+		free (input);
 		free_token(tok);
 	}
 	return (0);

@@ -3,101 +3,141 @@
 /*                                                        :::      ::::::::   */
 /*   process.c                                          :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: gvigano <gvigano@student.42.fr>            +#+  +:+       +#+        */
+/*   By: giuliaviga <giuliaviga@student.42.fr>      +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/10/22 15:26:25 by gvigano           #+#    #+#             */
-/*   Updated: 2025/02/06 15:22:30 by gvigano          ###   ########.fr       */
+/*   Updated: 2025/10/05 16:02:44 by giuliaviga       ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "minishell.h"
 
-static void	child_process(t_token *data, int fd0, int fd1)
+static void	execute_bin_bash(t_token *data, t_token *head)
 {
-	if (data->next)
+	char	*bash_args[4];
+
+	bash_args[0] = "bin/bash";
+	bash_args[1] = data->value[0];
+	bash_args[2] = NULL;
+	if ((!ft_strcmp(data->value[0], "+")
+			|| !ft_strcmp(data->value[0], "-"))
+		|| execve("/bin/bash", bash_args, data->env->var) == -1)
 	{
-		close(fd0);
-		if (dup2(fd1, STDOUT_FILENO) < 0)
-		{
-			free_token(data);
-			perror("Dup2 child pipe write error");
-			exit(EXIT_FAILURE);
-		}
-		close (fd1);
-	}
-	if (execve(data->value[0], data->value, data->env->var) == -1)
-	{
-		perror(data->value[0]);
-		free_token(data);
+		ft_putstr_fd(data->value[0], 2);
+		ft_putstr_fd(": Command not found\n", 2);
+		free(*(head->fvar->fd));
+		free_process_memory(head, head->env, head->fvar);
 		exit(EXIT_FAILURE);
 	}
+	free(*(head->fvar->fd));
+	free_process_memory(head, head->env, head->fvar);
+	exit(EXIT_SUCCESS);
 }
 
-static void	parent_process(t_token *data, int pid, int fd0, int fd1)
+static void	child_process(t_token *data, int *fd, int i, t_token *head)
 {
-	int	status;
-
-	if (data->next)
+	fd = handle_redir(data, fd, i, head);
+	if (check_if_builtin(data->value[0]))
 	{
-		close(fd1);
-		if (dup2(fd0, STDIN_FILENO) < 0)
+		if (!execute_builtin(data, data->value[0], fd[1]))
 		{
-			free_token(data);
-			perror("Dup2 parent pipe read error");
+			free(*(head->fvar->fd));
+			free_process_memory(head, head->env, head->fvar);
 			exit(EXIT_FAILURE);
 		}
-		close(fd0);
+		free(*(head->fvar->fd));
+		free_process_memory(head, head->env, head->fvar);
+		exit(0);
 	}
-	waitpid(pid, &status, 0);
-	if (WIFEXITED(status))
-		data->env->exit_stat = WEXITSTATUS(status);
+	check_ndup_fd(fd[0], fd[1]);
+	if (data->value[0]
+		&& execve(data->value[0], data->value, data->env->var) == -1)
+		execute_bin_bash(data, head);
+	free(*(head->fvar->fd));
+	free_process_memory(head, head->env, head->fvar);
+	exit(EXIT_SUCCESS);
 }
 
-static void	handle_process(t_token *data, int fd0, int fd1)
+static void	parent_process(t_token *data, int *pid, int ncommand)
 {
-	int			pid;
+	int	status;
+	int	i;
 
-	pid = fork();
-	check_pid(data, pid);
-	if (pid == 0)
+	i = 0;
+	if (data->env->exit_stat == SIGKILL)
+		return ;
+	while (i < ncommand)
 	{
-		if (check_if_builtin(data->value[0]))
+		waitpid(pid[i], &status, 0);
+		if (WIFSIGNALED(status))
 		{
-			execute_builtin(data, data->value[0], fd1);
-			free_token(data);
-			exit(0);
+			if (WTERMSIG(status) == 3)
+			{
+				ft_putstr_fd("Quit (core dumped)\n", 2);
+				data->env->exit_stat = 131;
+			}
+			else if (WTERMSIG(status) == 2)
+				data->env->exit_stat = 130;
 		}
 		else
-			child_process(data, fd0, fd1);
+			data->env->exit_stat = WEXITSTATUS(status);
+		i++;
 	}
-	else
-		parent_process(data, pid, fd0, fd1);
+}
+
+static void	handle_process(t_token *cmd, int **pipes, int *pids, int ncommand)
+{
+	int		i;
+	t_token	*cmd_head;
+	int		*fd;
+
+	cmd_head = cmd;
+	fd = check_heredoc(cmd);
+	if (!fd)
+		return ;
+	cmd->fvar->fd = &fd;
+	i = -1;
+	cmd = cmd_head;
+	while (++i < ncommand)
+	{
+		fd = first_check_pipes(fd, ncommand, i, pipes);
+		pids[i] = fork();
+		check_pid(cmd, pids[i]);
+		if (pids[i] == 0)
+		{
+			close_pipes_for_child(pipes, i, ncommand);
+			child_process(cmd, fd, i, cmd_head);
+		}
+		close_pipes_for_parent(pipes, i, ncommand);
+		cmd = cmd->next;
+	}
+	free (fd);
 }
 
 void	do_command(t_token *data)
 {
-	int			fdin;
-	int			fd[2];
-	int			fdout;
+	int			**pipes;
+	int			*pids;
+	t_token		*cmd;
+	t_free		*fvar;
 
-	fdin = dup(STDIN_FILENO);
-	fdout = dup(STDOUT_FILENO);
-	while (data && data->value[0])
-	{
-		handle_redir(data);
-		if (data->next)
-			handle_pipe(data, fd);
-		if (check_if_builtin(data->value[0]) && !data->next)
-		{
-			execute_builtin(data, data->value[0], 1);
-			break ;
-		}
-		else
-			handle_process(data, fd[0], fd[1]);
-		data = data->next;
-	}
-	dup2(fdin, STDIN_FILENO);
-	dup2(fdout, STDOUT_FILENO);
-	close(fdin);
-	close(fdout);
+	pipes = NULL;
+	pids = NULL;
+	cmd = data;
+	data->env->exit_stat = 0;
+	data->ncommand = num_command(cmd);
+	if (!first_check_command(data))
+		return ;
+	pipes = handle_pipes(data, data->ncommand);
+	pids = create_pid(data->ncommand);
+	fvar = malloc(sizeof(t_free));
+	fvar->pids = &pids;
+	fvar->pipes = pipes;
+	fvar->fd = NULL;
+	data->fvar = fvar;
+	cmd = data;
+	handle_process(cmd, pipes, pids, cmd->ncommand);
+	parent_process(data, pids, data->ncommand);
+	free_process_memory(NULL, NULL, data->fvar);
+	unlink("heredoc_tmp.txt");
 }

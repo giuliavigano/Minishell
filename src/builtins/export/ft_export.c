@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   ft_export.c                                        :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: gvigano <gvigano@student.42.fr>            +#+  +:+       +#+        */
+/*   By: menny <menny@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/02/06 11:40:47 by gvigano           #+#    #+#             */
-/*   Updated: 2025/02/06 11:40:48 by gvigano          ###   ########.fr       */
+/*   Updated: 2025/02/17 17:27:57 by menny            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,7 +21,8 @@ static char	**null_var(char **env, char *var_name)
 	new_env = copy_env(env);
 	while (env[i])
 	{
-		if (!ft_strncmp(env[i], var_name, ft_strlen(var_name)))
+		if (!ft_strncmp(env[i], var_name, ft_strlen(var_name))
+			&& !env[i][ft_strlen(var_name)])
 			return (new_env);
 		i++;
 	}
@@ -54,7 +55,7 @@ static char	**value_var(char **env, char *var, char *var_name)
 	return (new_env);
 }
 
-static char	**export_var(char **env, char *var)
+char	**export_var(char **env, char *var)
 {
 	size_t	i;
 	char	*var_name;
@@ -80,7 +81,7 @@ static char	**export_var(char **env, char *var)
 	return (new_env);
 }
 
-int	ft_export(t_token *data)
+int	ft_export(t_token *data, int fd)
 {
 	char	**new_env;
 	size_t	i;
@@ -88,7 +89,7 @@ int	ft_export(t_token *data)
 
 	if (!data->value[1])
 	{
-		print_export_env(data->env->var);
+		print_export_env(data->env->var, fd);
 		return (1);
 	}
 	i = 1;

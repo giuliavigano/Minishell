@@ -3,125 +3,254 @@
 /*                                                        :::      ::::::::   */
 /*   redir.c                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: gvigano <gvigano@student.42.fr>            +#+  +:+       +#+        */
+/*   By: menny <menny@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/10/22 15:26:25 by gvigano           #+#    #+#             */
-/*   Updated: 2025/02/06 12:00:52 by gvigano          ###   ########.fr       */
+/*   Updated: 2025/02/24 15:44:31 by menny            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "minishell.h"
 
-static void	child_process_hd(char *limiter, int fd0, int fd1, t_token *data)
+static int	child_process_hd(t_token *data, t_token *head)
 {
 	char	*line;
+	char	*limiter;
+	int		fd;
 
-	close(fd0);
+	fd = get_tmpfd(data);
+	if (!fd)
+		return (0);
+	limiter = ft_strjoin(data->rd->name, "\n");
 	line = get_next_line(STDIN_FILENO);
-	while (line != NULL)
+	while (line)
 	{
-		if (ft_strncmp(line, limiter, ft_strlen(limiter)) == 0
-			&& line[ft_strlen(limiter)] == '\n')
-		{
-			free(line);
+		if (ft_strcmp(line, limiter))
+			write(fd, line, ft_strlen(line));
+		else
 			break ;
-		}
-		write(fd1, line, ft_strlen(line));
-		free(line);
+		free (line);
+		line = get_next_line(STDIN_FILENO);
 	}
-	close(fd1);
-	free_token(data);
-	exit(EXIT_SUCCESS);
+	if (line)
+		free (line);
+	close (fd);
+	free (limiter);
+	get_next_line(-42);
+	free_token (head);
+	return (1);
 }
+/*				PIU' RECENTE			*/
+// int	here_doc(t_token *data, int **tmp_fd, int **tmp_pids, t_token *head)
+// {
+// 	int		pid_r;
+// 	int		fd[2];
 
-static int	here_doc(t_token *data)
+// 	if (pipe(fd) < 0)
+// 	{
+// 		perror("Pipe error");
+// 		return (0);
+// 	}
+// 	pid_r = fork();
+// 	g_kill_pid = pid_r;
+// 	check_pid(data, pid_r);
+// 	if (pid_r == 0)
+// 	{
+// 		free(*(tmp_fd));
+// 		free(*(tmp_pids));
+// 		free_environment(data->env, 1);
+// 		if (!child_process_hd(data, head))
+// 			exit(EXIT_FAILURE);
+// 		exit(EXIT_SUCCESS);
+// 	}
+// 	else
+// 		parent_process_hd(data, pid_r);
+// 	return (1);
+// }
+
+int	here_doc(t_token *data, t_token *head)
 {
 	int		pid_r;
 	int		fd[2];
-	char	*limiter;
 
-	limiter = data->rd->name;
-	handle_pipe(data, fd);
+	if (pipe(fd) < 0)
+	{
+		perror("Pipe error");
+		return (0);
+	}
 	pid_r = fork();
+	g_kill_pid = pid_r;
 	check_pid(data, pid_r);
 	if (pid_r == 0)
-		child_process_hd(limiter, fd[0], fd[1], data);
-	else
 	{
-		close(fd[1]);
-		wait(NULL);
+		free(*(head->fvar->fd));
+		free_process_memory(NULL, head->env, head->fvar);
+		if (!child_process_hd(data, head))
+			exit(EXIT_FAILURE);
+		exit(EXIT_SUCCESS);
 	}
+	else
+		parent_process_hd(data, pid_r);
+	return (1);
+}
+
+// int	here_doc(t_token *data, int ***free_var)
+// {
+// 	int		pid_r;
+// 	int		fd[2];
+// 	int		i;
+
+// 	if (pipe(fd) < 0)
+// 	{
+// 		perror("Pipe error");
+// 		return (0);
+// 	}
+// 	pid_r = fork();
+// 	g_kill_pid = pid_r;
+// 	check_pid(data, pid_r);
+// 	if (pid_r == 0)
+// 	{
+// 		i = 0;
+// 		while (*(free_var[i]))
+// 			free(*(free_var[i]));
+// 		free(*(free_var));
+// 		free_environment(data->env, 1);
+// 		if (!child_process_hd(data))
+// 			return (0);
+// 		exit(EXIT_SUCCESS);
+// 	}
+// 	else
+// 		parent_process_hd(data, pid_r);
+// 	return (1);
+// }
+
+static int	handle_input_redir(t_redir *rd, int *fd, int i)
+{
+	if (rd && rd->type == T_RED_IN)
+	{
+		close (fd[0]);
+		fd[0] = open(rd->name, O_RDONLY);
+		if (fd[0] < 0)
+			return (-1);
+	}
+	else if (rd && rd->type == T_DELIM && fd[2] == i)
+	{
+		fd[0] = open("heredoc_tmp.txt", O_RDONLY);
+		if (fd[0] < 0)
+		{
+			perror("Error heredoc_tmp");
+			return (-1);
+		}
+	}
+	else if (rd && rd->type == T_DELIM)
+		return (-1);
 	return (fd[0]);
 }
 
-static void	handle_input_redir(t_token *data, int *tmpin)
+static int	handle_output_redir(t_redir *rd, int tmpout)
 {
-	if (data->rd && data->rd->type == T_RED_IN)
+	if (rd && rd->type == T_RED_OUT)
 	{
-		*tmpin = open(data->rd->name, O_RDONLY);
-		if (*tmpin < 0)
+		close (tmpout);
+		tmpout = open(rd->name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+		if (tmpout < 0)
 		{
-			free_token(data);
-			perror("Error opening input file");
-			exit(EXIT_FAILURE);
+			perror("Error opening output file");
+			return (-1);
 		}
 	}
-	else if (data->rd && data->rd->type == T_DELIM)
+	else if (rd && rd->type == T_RED_APPEN)
 	{
-		if (data->rd->name)
-			*tmpin = here_doc(data);
-		else
+		close (tmpout);
+		tmpout = open(rd->name, O_WRONLY | O_CREAT | O_APPEND, 0777);
+		if (tmpout < 0)
 		{
-			free_token(data);
-			perror("Error delimiter here_doc");
-			exit(EXIT_FAILURE);
+			perror("Error opening output file");
+			return (-1);
 		}
 	}
-	else
-		*tmpin = dup(STDIN_FILENO);
+	return (tmpout);
 }
 
-static void	handle_output_redir(t_token *data, int *tmpout)
+// static int	handle_input_redir(t_token *data, t_redir *rd, int *fd, int i)
+// {
+// 	if (rd && rd->type == T_RED_IN)
+// 	{
+// 		fd[0] = open(rd->name, O_RDONLY);
+// 		if (fd[0] < 0)
+// 		{
+// 			free_token(data);
+// 			exit(EXIT_FAILURE);
+// 		}
+// 	}
+// 	else if (rd && rd->type == T_DELIM && fd[2] == i)
+// 	{
+// 		fd[0] = open("heredoc_tmp.txt", O_RDONLY);
+// 		if (fd[0] < 0)
+// 		{
+// 			free_token(data);
+// 			perror("Error heredoc_tmp");
+// 			exit(EXIT_FAILURE);
+// 		}
+// 	}
+// 	else if (rd && rd->type == T_DELIM)
+// 	{
+// 		free_token(data);
+// 		exit(EXIT_FAILURE);
+// 	}
+// 	return (fd[0]);
+// }
+
+// static int	handle_output_redir(t_token *data, t_redir *rd, int tmpout)
+// {
+// 	if (rd && rd->type == T_RED_OUT)
+// 	{
+// 		tmpout = open(rd->name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+// 		if (tmpout < 0)
+// 		{
+// 			free_token(data);
+// 			perror("Error opening output file");
+// 			exit(EXIT_FAILURE);
+// 		}
+// 	}
+// 	else if (rd && rd->type == T_RED_APPEN)
+// 	{
+// 		tmpout = open(rd->name, O_WRONLY | O_CREAT | O_APPEND, 0777);
+// 		if (tmpout < 0)
+// 		{
+// 			free_token(data);
+// 			perror("Error opening output file");
+// 			exit(EXIT_FAILURE);
+// 		}
+// 	}
+// 	return (tmpout);
+// }
+
+int	*handle_redir(t_token *data, int *fd, int j, t_token *head)
 {
-	if (data->rd && data->rd->type == T_RED_OUT)
+	t_redir	*current;
+	size_t	i;
+
+	i = 0;
+	current = data->rd;
+	while (i < data->nredir)
 	{
-		*tmpout = open(data->rd->name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-		if (*tmpout < 0)
+		fd[0] = handle_input_redir(current, fd, j);
+		fd[1] = handle_output_redir(current, fd[1]);
+		if (fd[0] == -1 || fd[1] == -1)
 		{
-			free_token(data);
-			perror("Error opening output file");
+			free(*(head->fvar->fd));
+			free_process_memory(head, head->env, head->fvar);
 			exit(EXIT_FAILURE);
 		}
-	}
-	else if (data->rd && data->rd->type == T_RED_APPEN)
-	{
-		*tmpout = open(data->rd->name, O_WRONLY | O_CREAT | O_APPEND, 0777);
-		if (*tmpout < 0)
+		if (data->env->exit_stat == SIGKILL)
 		{
-			free_token(data);
-			perror("Error opening output file");
-			exit(EXIT_FAILURE);
+			free(*(head->fvar->fd));
+			free_process_memory(head, head->env, head->fvar);
+			exit(data->env->exit_stat);
 		}
+		current = current->next;
+		i++;
 	}
-	else
-		*tmpout = dup(STDOUT_FILENO);
-}
-
-void	handle_redir(t_token *data)
-{
-	int		tmpin;
-	int		tmpout;
-
-	handle_input_redir(data, &tmpin);
-	if (tmpin != STDIN_FILENO)
-	{
-		dup2(tmpin, STDIN_FILENO);
-		close(tmpin);
-	}
-	handle_output_redir(data, &tmpout);
-	if (tmpout != STDIN_FILENO)
-	{
-		dup2(tmpout, STDOUT_FILENO);
-		close(tmpout);
-	}
+	return (fd);
 }
