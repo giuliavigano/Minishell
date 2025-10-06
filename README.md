@@ -2,7 +2,6 @@
 
 [![42 School](https://img.shields.io/badge/42-School-000000?style=flat&logo=42&logoColor=white)](https://42.fr)
 [![C](https://img.shields.io/badge/C-00599C?style=flat&logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C_(programming_language))
-[![Grade](https://img.shields.io/badge/Grade-125%2F100-success)](https://profile.intra.42.fr/)
 
 > *As beautiful as a shell* - A minimalist but complete Unix shell implementation
 
